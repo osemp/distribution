@@ -623,6 +623,15 @@ type Middleware struct {
 	Options Parameters `yaml:"options"`
 }
 
+type RemoteRegistry struct {
+	// URL is the remote registry url
+	URL string `yaml:"url"`
+	// Username for the registry
+	Username string `yaml:"username"`
+	// Password for the registry
+	Password string `yaml:"password"`
+}
+
 // Proxy configures the registry as a pull through cache
 type Proxy struct {
 	// RemoteURL is the URL of the remote registry
@@ -633,6 +642,12 @@ type Proxy struct {
 
 	// Password of the hub user
 	Password string `yaml:"password"`
+
+	// RemoteRegistries for supporting multiple remote registry url
+	RemoteRegistries []RemoteRegistry `yaml:"remoteregistries"`
+
+	// On is used to force turn on proxy, whenever there are RemoteRegistries / RemoteURL or not
+	On bool `yaml:"on"`
 }
 
 // Parse parses an input configuration yaml document into a Configuration struct
