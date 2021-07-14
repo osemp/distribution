@@ -2,7 +2,11 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"regexp"
+
+	"github.com/opencontainers/go-digest"
+	"github.com/sirupsen/logrus"
 
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/reference"
@@ -18,6 +22,7 @@ type registry struct {
 	blobServer                   *blobServer
 	statter                      *blobStatter // global statter service.
 	blobDescriptorCacheProvider  cache.BlobDescriptorCacheProvider
+	blobDescriptorServiceMap     map[string]distribution.BlobDescriptorService
 	deleteEnabled                bool
 	schema1Enabled               bool
 	resumableDigestEnabled       bool
@@ -109,11 +114,103 @@ func BlobDescriptorCacheProvider(blobDescriptorCacheProvider cache.BlobDescripto
 	// blobDescriptorCacheProvider.
 	return func(registry *registry) error {
 		if blobDescriptorCacheProvider != nil {
+			//previousStatter := registry.statter
+			descriptorSeen := map[string]distribution.Descriptor{}
+			type repoBDCP struct {
+				bdcp     distribution.BlobDescriptorService
+				layers   []string
+				repoName string
+			}
+			repoBDCPs := []repoBDCP{}
+
 			statter := cache.NewCachedBlobStatter(blobDescriptorCacheProvider, registry.statter)
 			registry.blobStore.statter = statter
 			registry.blobServer.statter = statter
 			registry.blobDescriptorCacheProvider = blobDescriptorCacheProvider
+			registry.Enumerate(context.Background(), func(repoName string) error {
+				var (
+					err error
+					ctx = context.Background()
+				)
+
+				bdcp, err := blobDescriptorCacheProvider.RepositoryScoped(repoName)
+				if err != nil {
+					return err
+				}
+
+				repobdcp := repoBDCP{bdcp: bdcp, repoName: repoName}
+				named, err := reference.WithName(repoName)
+				if err != nil {
+					return fmt.Errorf("failed to parse repo name %s: %v", repoName, err)
+				}
+				repo, err := registry.Repository(ctx, named)
+				if err != nil {
+					return fmt.Errorf("failed to construct repository: %v", err)
+				}
+
+				manifestService, err := repo.Manifests(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to construct manifest service: %v", err)
+				}
+
+				manifestEnumerator, ok := manifestService.(distribution.ManifestEnumerator)
+				if !ok {
+					return fmt.Errorf("unable to convert ManifestService into ManifestEnumerator")
+				}
+
+				var statter distribution.BlobDescriptorService = &linkedBlobStatter{
+					blobStore:   registry.blobStore,
+					repository:  repo,
+					linkPathFns: []linkPathFunc{blobLinkPath},
+				}
+
+				manifestEnumerator.Enumerate(ctx, func(dgst digest.Digest) error {
+					manifest, err := manifestService.Get(ctx, dgst)
+					if err != nil {
+						return fmt.Errorf("failed to retrieve manifest for digest %v: %v", dgst, err)
+					}
+
+					descriptors := manifest.References()
+					for _, desc := range descriptors {
+						repobdcp.layers = append(repobdcp.layers, desc.Digest.String())
+						_, seen := descriptorSeen[desc.Digest.String()]
+						if seen {
+							continue
+						}
+
+						rDesc, err := statter.Stat(ctx, desc.Digest)
+						if err != nil {
+							continue
+						}
+
+						descriptorSeen[desc.Digest.String()] = rDesc
+					}
+					return nil
+				})
+
+				repoBDCPs = append(repoBDCPs, repobdcp)
+				//registry.blobDescriptorServiceMap[repoName] = bdcp
+				return nil
+			})
+
+			ctx := context.Background()
+			for _, repobdcp := range repoBDCPs {
+				for _, l := range repobdcp.layers {
+					desc, ok := descriptorSeen[l]
+					if !ok {
+						continue
+					}
+
+					err := repobdcp.bdcp.SetDescriptor(ctx, desc.Digest, desc)
+					if err != nil {
+						logrus.Warnf("failed to set descriptor %s, err: %v", desc.Digest, err)
+					}
+				}
+
+				registry.blobDescriptorServiceMap[repobdcp.repoName] = repobdcp.bdcp
+			}
 		}
+
 		return nil
 	}
 }
@@ -140,9 +237,10 @@ func NewRegistry(ctx context.Context, driver storagedriver.StorageDriver, option
 			statter: statter,
 			pathFn:  bs.path,
 		},
-		statter:                statter,
-		resumableDigestEnabled: true,
-		driver:                 driver,
+		statter:                  statter,
+		resumableDigestEnabled:   true,
+		driver:                   driver,
+		blobDescriptorServiceMap: map[string]distribution.BlobDescriptorService{},
 	}
 
 	for _, option := range options {
@@ -167,7 +265,11 @@ func (reg *registry) Repository(ctx context.Context, canonicalName reference.Nam
 	var descriptorCache distribution.BlobDescriptorService
 	if reg.blobDescriptorCacheProvider != nil {
 		var err error
-		descriptorCache, err = reg.blobDescriptorCacheProvider.RepositoryScoped(canonicalName.Name())
+		var ok bool
+		descriptorCache, ok = reg.blobDescriptorServiceMap[canonicalName.Name()]
+		if !ok {
+			descriptorCache, err = reg.blobDescriptorCacheProvider.RepositoryScoped(canonicalName.Name())
+		}
 		if err != nil {
 			return nil, err
 		}

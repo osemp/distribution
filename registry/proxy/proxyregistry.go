@@ -285,10 +285,8 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 
 	c, remoteUrl, err = pr.getChallengerFromMirrorHeader(ctx, c, remoteUrl)
 	if err != nil {
-		logrus.Warnf("failed to get challenger, try to use default challenger, err: %s", err)
-		// always return a default challenger, just to make sure the local registry could work
-		c = pr.defaultChallenger()
-		remoteUrl = *DefaultV2Registry
+		logrus.Warnf("failed to get challenger, err: %s", err)
+		return pr.degradeToLocal(ctx, name)
 	}
 
 	tkopts := auth.TokenHandlerOptions{
@@ -326,9 +324,10 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 		return nil, err
 	}
 
+	localStore := localRepo.Blobs(ctx)
 	return &proxiedRepository{
 		blobStore: &proxyBlobStore{
-			localStore:     localRepo.Blobs(ctx),
+			localStore:     localStore,
 			remoteStore:    remoteRepo.Blobs(ctx),
 			scheduler:      pr.scheduler,
 			repositoryName: name,
@@ -512,6 +511,44 @@ func (r *remoteAuthChallenger) tryEstablishChallenges(ctx context.Context) error
 
 	dcontext.GetLogger(ctx).Infof("Challenge established with upstream : %s %s", remoteURL, r.cm)
 	return nil
+}
+
+func (pr *proxyingRegistry) degradeToLocal(ctx context.Context, name reference.Named) (*proxiedRepository, error) {
+	localRepo, err := pr.embedded.Repository(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	localManifests, err := localRepo.Manifests(ctx, storage.SkipLayerVerification())
+	if err != nil {
+		return nil, err
+	}
+
+	emptyC := emptyChallenger{}
+	localStore := localRepo.Blobs(ctx)
+	return &proxiedRepository{
+		blobStore: &proxyBlobStore{
+			localStore:     localStore,
+			remoteStore:    &emptyBlobService{},
+			scheduler:      pr.scheduler,
+			repositoryName: name,
+			authChallenger: &emptyC,
+		},
+		manifests: &proxyManifestStore{
+			repositoryName:  name,
+			localManifests:  localManifests, // Options?
+			remoteManifests: &emptyManifestService{},
+			ctx:             ctx,
+			scheduler:       pr.scheduler,
+			authChallenger:  &emptyC,
+		},
+		name: name,
+		tags: &proxyTagService{
+			localTags:      localRepo.Tags(ctx),
+			remoteTags:     &emptyTagService{},
+			authChallenger: &emptyC,
+		},
+	}, nil
 }
 
 // proxiedRepository uses proxying blob and manifest services to serve content

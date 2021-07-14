@@ -323,16 +323,14 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 	}
 
 	// configure as a pull through cache
-	if config.Proxy.On && config.Proxy.RemoteURL != "" {
+	if config.Proxy.RemoteURL != "" {
 		app.registry, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy)
 		if err != nil {
 			panic(err.Error())
 		}
 		app.isCache = true
 		dcontext.GetLogger(app).Info("Registry configured as a proxy cache to ", config.Proxy.RemoteURL)
-	}
-
-	if config.Proxy.On {
+	} else if config.Proxy.On {
 		// if config proxy on is true, and len(config.Proxy.RemoteRegistries) == 0, will return a
 		// very simple cache registry, with empty challengeManager, with empty scheduler(clean scheduler)
 		if len(config.Proxy.RemoteRegistries) == 0 {
