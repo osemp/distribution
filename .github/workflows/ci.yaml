@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - *
+jobs:
+  publish-amd64:
+    name: Amd64 docker image
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDTAGS: "include_oss include_gcs"
+      CGO_ENABLED: 1
+      GO111MODULE: "auto"
+      GOPATH: ${{ github.workspace }}
+      GOOS: linux
+    steps:
+      - name: Check out source code
+        if: ${{ success() }}
+        uses: actions/checkout@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        if: ${{ success() }}
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            VERSION=latest
+          tags: ghcr.io/${{ github.actor }}/distribution-amd64/distribution:latest
+  publish-arm64:
+    name: Arm64 docker image
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDTAGS: "include_oss include_gcs"
+      CGO_ENABLED: 1
+      GO111MODULE: "auto"
+      GOPATH: ${{ github.workspace }}
+      GOOS: linux
+      GOARCH: arm64
+
+    steps:
+      - name: Check out source code
+        if: ${{ success() }}
+        uses: actions/checkout@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        if: ${{ success() }}
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: true
+          build-args: |
+            VERSION=latest
+            GOARCH=arm64
+          tags: ghcr.io/${{ github.actor }}/distribution-arm64/distribution:latest
