@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/docker/distribution/context"
 	"github.com/docker/distribution/registry/client/auth"
@@ -11,6 +12,8 @@ import (
 )
 
 const challengeHeader = "Docker-Distribution-Api-Version"
+
+var defaultHttpClient = &http.Client{Timeout: time.Second * 5}
 
 type userpass struct {
 	username string
@@ -57,7 +60,8 @@ func configureAuth(username, password, remoteURL string) (auth.CredentialStore, 
 func getAuthURLs(remoteURL string) ([]string, error) {
 	authURLs := []string{}
 
-	resp, err := http.Get(remoteURL + "/v2/")
+	//resp, err := http.Get(remoteURL + "/v2/")
+	resp, err := defaultHttpClient.Get(remoteURL + "/v2/")
 	if err != nil {
 		return nil, err
 	}

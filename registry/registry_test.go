@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v2"
+
 	"github.com/docker/distribution/configuration"
 	_ "github.com/docker/distribution/registry/storage/driver/inmemory"
 )
@@ -46,6 +48,36 @@ func setupRegistry() (*Registry, error) {
 	config.HTTP.DrainTimeout = time.Duration(10) * time.Second
 	config.Storage = map[string]configuration.Parameters{"inmemory": map[string]interface{}{}}
 	return NewRegistry(context.Background(), config)
+}
+
+func setupRegistryWithConfig(config configuration.Configuration) (*Registry, error) {
+	config.Storage = map[string]configuration.Parameters{"inmemory": map[string]interface{}{}}
+	config.HTTP.Addr = "0.0.0.0:5001"
+	return NewRegistry(context.Background(), &config)
+}
+
+func TestSetupRegistry(t *testing.T) {
+	config := &configuration.Configuration{}
+	err := yaml.Unmarshal([]byte(cacheConfig), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry, err := setupRegistryWithConfig(*config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// run registry server
+	var errchan chan error
+	go func() {
+		errchan <- registry.ListenAndServe()
+	}()
+	select {
+	case err = <-errchan:
+		t.Fatalf("Error listening: %v", err)
+	}
+
 }
 
 func TestGracefulShutdown(t *testing.T) {

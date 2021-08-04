@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"errors"
 	"expvar"
 	"fmt"
 	"math/rand"
@@ -24,7 +25,7 @@ import (
 	"github.com/docker/distribution/notifications"
 	"github.com/docker/distribution/reference"
 	"github.com/docker/distribution/registry/api/errcode"
-	"github.com/docker/distribution/registry/api/v2"
+	v2 "github.com/docker/distribution/registry/api/v2"
 	"github.com/docker/distribution/registry/auth"
 	registrymiddleware "github.com/docker/distribution/registry/middleware/registry"
 	repositorymiddleware "github.com/docker/distribution/registry/middleware/repository"
@@ -96,7 +97,7 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 		Config:  config,
 		Context: ctx,
 		router:  v2.RouterWithPrefix(config.HTTP.Prefix),
-		isCache: config.Proxy.RemoteURL != "",
+		isCache: (config.Proxy.RemoteURL != "" || len(config.Proxy.RemoteRegistries) != 0) && config.Proxy.On,
 	}
 
 	// Register the handler dispatchers.
@@ -316,6 +317,11 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 		dcontext.GetLogger(app).Debugf("configured %q access controller", authType)
 	}
 
+	if config.Proxy.RemoteURL != "" && len(config.Proxy.RemoteRegistries) != 0 {
+		err = errors.New("config remote url and remote registries both is not allowed")
+		panic(err)
+	}
+
 	// configure as a pull through cache
 	if config.Proxy.RemoteURL != "" {
 		app.registry, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy)
@@ -324,7 +330,29 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 		}
 		app.isCache = true
 		dcontext.GetLogger(app).Info("Registry configured as a proxy cache to ", config.Proxy.RemoteURL)
+	} else if config.Proxy.On {
+		// if config proxy on is true, and len(config.Proxy.RemoteRegistries) == 0, will return a
+		// very simple cache registry, with empty challengeManager, with empty scheduler(clean scheduler)
+		if len(config.Proxy.RemoteRegistries) == 0 {
+			app.registry, err = proxy.NewRegistryPullThroughWithNothing(ctx, app.registry, app.driver)
+			if err != nil {
+				panic(err.Error())
+			}
+			dcontext.GetLogger(app).Info("Registry configured as a registry with nothing pre-configs")
+		} else {
+			app.registry, err = proxy.NewRegistryPullThroughCacheOnRemoteRegistries(ctx, app.registry, app.driver, config.Proxy.RemoteRegistries)
+			if err != nil {
+				panic(err.Error())
+			}
+			var regs []string
+			for _, reg := range config.Proxy.RemoteRegistries {
+				regs = append(regs, reg.URL)
+			}
+			dcontext.GetLogger(app).Info("Registry configured as a proxy cache to ", regs)
+		}
+		app.isCache = true
 	}
+
 	var ok bool
 	app.repoRemover, ok = app.registry.(distribution.RepositoryRemover)
 	if !ok {
@@ -668,7 +696,6 @@ func (app *App) dispatcher(dispatch dispatchFunc) http.Handler {
 
 		// Add username to request logging
 		context.Context = dcontext.WithLogger(context.Context, dcontext.GetLogger(context.Context, auth.UserNameKey))
-
 		// sync up context on the request.
 		r = r.WithContext(context)
 
