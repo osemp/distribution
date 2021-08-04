@@ -15,12 +15,8 @@ jobs:
       GO111MODULE: "auto"
       GOPATH: ${{ github.workspace }}
       GOOS: linux
-
+      DOCKER_TAG: ${GITHUB_REF#refs/tags/v}
     steps:
-      - name: Set image tag
-        id: get_image_tag
-        run: echo ::set-output name=docker_tag::${GITHUB_REF#refs/tags/v}
-
       - name: Check out source code
         if: ${{ success() }}
         uses: actions/checkout@v2
@@ -49,8 +45,8 @@ jobs:
           platforms: linux/amd64
           push: true
           build-args: |
-            VERSION={{ steps.get_image_tag.outputs.docker_tag }}
-          tags: ghcr.io/${{ github.repository_owner }}/distribution-amd64/distribution:{{ steps.get_image_tag.outputs.docker_tag }}
+            VERSION=${DOCKER_TAG}
+          tags: ghcr.io/${{ github.repository_owner }}/distribution-amd64/distribution:${DOCKER_TAG}
   publish-arm64:
     name: Publish arm64 docker image
     runs-on: ubuntu-latest
@@ -61,12 +57,8 @@ jobs:
       GOPATH: ${{ github.workspace }}
       GOOS: linux
       GOARCH: arm64
-
+      DOCKER_TAG: ${GITHUB_REF#refs/tags/v}
     steps:
-      - name: Set image tag
-        id: get_image_tag
-        run: echo ::set-output name=docker_tag::${GITHUB_REF#refs/tags/v}
-
       - name: Check out source code
         if: ${{ success() }}
         uses: actions/checkout@v2
@@ -95,6 +87,5 @@ jobs:
           platforms: linux/arm64
           push: true
           build-args: |
-            VERSION={{ steps.get_image_tag.outputs.docker_tag }}
+            VERSION=${DOCKER_TAG}
             GOARCH=arm64
-          tags: ghcr.io/${{ github.repository_owner }}/distribution-arm64/distribution:{{ steps.get_image_tag.outputs.docker_tag }}
