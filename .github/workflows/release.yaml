@@ -3,7 +3,7 @@ name: Release docker image
 on:
   push:
     tags:
-      - "*"
+      - 'v*'
 
 jobs:
   publish-amd64:
@@ -17,30 +17,15 @@ jobs:
       GOOS: linux
 
     steps:
-      - name: Get git tag
-        id: get_git_tag
-        run: echo ::set-output name=git_tag::${GITHUB_REF#refs/tags/}
-
-      - name: Verify git tag
-        env:
-          GIT_TAG: ${{ steps.get_git_tag.outputs.git_tag }}
-        # NOTE: this is a simple Regexp, following the current versioning scheme
-        # In ideal world we should use this monstrosity:
-        # https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
-        run: |
-          [[ ${GIT_TAG} =~ ^v[0-9]+.[0-9]+.[0-9]+ ]]
+      - name: Set image tag
+        id: get_image_tag
+        run: echo ::set-output name=docker_tag::${GITHUB_REF#refs/tags/v}
 
       - name: Check out source code
         if: ${{ success() }}
         uses: actions/checkout@v2
         with:
-          ref: ${{ steps.get_git_tag.outputs.git_tag }}
-
-      - name: Set image tag
-        env:
-          GIT_TAG: ${{ steps.get_git_tag.outputs.git_tag }}
-        id: get_image_tag
-        run: echo ::set-output name=docker_tag::${GIT_TAG}
+          ref: ${{ github.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -78,30 +63,16 @@ jobs:
       GOARCH: arm64
 
     steps:
-      - name: Get git tag
-        id: get_git_tag
-        run: echo ::set-output name=git_tag::${GITHUB_REF#refs/tags/}
-
-      - name: Verify git tag
-        env:
-          GIT_TAG: ${{ steps.get_git_tag.outputs.git_tag }}
-        # NOTE: this is a simple Regexp, following the current versioning scheme
-        # In ideal world we should use this monstrosity:
-        # https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
-        run: |
-          [[ ${GIT_TAG} =~ ^v[0-9]+.[0-9]+.[0-9]+ ]]
+      - name: Set image tag
+        id: get_image_tag
+        run: echo ::set-output name=docker_tag::${GITHUB_REF#refs/tags/v}
 
       - name: Check out source code
         if: ${{ success() }}
         uses: actions/checkout@v2
         with:
-          ref: ${{ steps.get_git_tag.outputs.git_tag }}
+          ref: ${{ github.ref }}
 
-      - name: Set image tag
-        env:
-          GIT_TAG: ${{ steps.get_git_tag.outputs.git_tag }}
-        id: get_image_tag
-        run: echo ::set-output name=docker_tag::${GIT_TAG}
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
 
