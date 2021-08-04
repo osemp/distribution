@@ -15,13 +15,13 @@ jobs:
       GO111MODULE: "auto"
       GOPATH: ${{ github.workspace }}
       GOOS: linux
-      DOCKER_TAG: ${GITHUB_REF#refs/tags/v}
+
     steps:
       - name: Check out source code
         if: ${{ success() }}
         uses: actions/checkout@v2
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github_ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -45,8 +45,8 @@ jobs:
           platforms: linux/amd64
           push: true
           build-args: |
-            VERSION=${DOCKER_TAG}
-          tags: ghcr.io/${{ github.repository_owner }}/distribution-amd64/distribution:${DOCKER_TAG}
+            VERSION={{ github_ref }}
+          tags: ghcr.io/${{ github.repository_owner }}/distribution-amd64/distribution:{{ github_ref }}
   publish-arm64:
     name: Publish arm64 docker image
     runs-on: ubuntu-latest
@@ -57,13 +57,13 @@ jobs:
       GOPATH: ${{ github.workspace }}
       GOOS: linux
       GOARCH: arm64
-      DOCKER_TAG: ${GITHUB_REF#refs/tags/v}
+
     steps:
       - name: Check out source code
         if: ${{ success() }}
         uses: actions/checkout@v2
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github_ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -87,5 +87,6 @@ jobs:
           platforms: linux/arm64
           push: true
           build-args: |
-            VERSION=${DOCKER_TAG}
+            VERSION={{ github_ref }}
             GOARCH=arm64
+          tags: ghcr.io/${{ github.repository_owner }}/distribution-arm64/distribution:{{ github_ref }}
