@@ -3,7 +3,15 @@ name: CI
 on:
   push:
     branches:
-      - *
+      - "*"
+  pull_request:
+    branches:
+      - "*"
+    paths-ignore:
+      - 'docs/**'
+      - 'vendor/**'
+      - '*.md'
+      - '*.yml'
 jobs:
   publish-amd64:
     name: Amd64 docker image
